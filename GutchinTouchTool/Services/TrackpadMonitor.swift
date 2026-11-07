@@ -194,6 +194,16 @@ class TrackpadMonitor {
     private var lastSingleFingerPos: (x: Float, y: Float)?  // last known 1-finger position
     private var positionClickFired = false                   // prevent re-firing on same press
 
+    // Corner tap detection (1-finger light tap in a corner zone, no button press)
+    private var physicalClickDuringSession = false
+
+    // MTTouch force (offset 48): light tap ≈ 1.0, registered click ≈ 1.3+
+    // (decayed max bridges the lag between the force ramp and the click event)
+    private var lastSingleFingerForce: Float = 0
+    // MTTouch fields at offsets 40/44 — finger x/y velocity, kept for the
+    // "GTT-press" calibration log
+    private var lastSingleFingerVel: (x: Float, y: Float) = (0, 0)
+
     // Raw touch struct stride (auto-detected at runtime)
     private var touchStride: Int = 0
 
@@ -302,6 +312,15 @@ class TrackpadMonitor {
         return (fid, px, py, maj)
     }
 
+    /// MTTouch fields at offsets 40/44/48 — empirically finger x/y velocity and
+    /// normalized touch force (probe data: light tap ≈ 1.0, click ≈ 1.3+)
+    private func readTouchExtras(from raw: UnsafeMutableRawPointer, at byteOffset: Int) -> (velX: Float, velY: Float, force: Float) {
+        let velX = raw.load(fromByteOffset: byteOffset + 40, as: Float.self)
+        let velY = raw.load(fromByteOffset: byteOffset + 44, as: Float.self)
+        let force = raw.load(fromByteOffset: byteOffset + 48, as: Float.self)
+        return (velX, velY, force)
+    }
+
     func handleMultitouchFrame(rawTouches: UnsafeMutableRawPointer?, numTouches: Int, timestamp: Double) {
         let activeFingersCount = numTouches
 
@@ -313,6 +332,7 @@ class TrackpadMonitor {
             // this frame (currentFingers still holds the previous frame's count here)
             if currentFingers == 0 {
                 resetFingerTracking()
+                physicalClickDuringSession = false
             }
             // Only detect stride when we have 2+ fingers (need two structs to measure)
             if touchStride == 0 && activeFingersCount >= 2 {
@@ -340,8 +360,13 @@ class TrackpadMonitor {
             if activeFingersCount == 1 {
                 let t0 = readTouch(from: raw, at: 0)
                 lastSingleFingerPos = (x: t0.x, y: t0.y)
+                let d = readTouchExtras(from: raw, at: 0)
+                lastSingleFingerVel = (d.velX, d.velY)
+                lastSingleFingerForce = max(d.force, lastSingleFingerForce * 0.9)
             } else {
                 lastSingleFingerPos = nil
+                lastSingleFingerForce = 0
+                lastSingleFingerVel = (0, 0)
             }
         }
         // Update visual press state from real-time button query every frame
@@ -554,7 +579,7 @@ class TrackpadMonitor {
                         doubleTapTimer = timer
                         DispatchQueue.global().asyncAfter(deadline: .now() + doubleTapWindow, execute: timer)
                     }
-                } else {
+                } else if peakFingers >= 3 {
                     let tapGesture: TrackpadGesture?
                     switch peakFingers {
                     case 3: tapGesture = .threeFingerTap
@@ -570,6 +595,15 @@ class TrackpadMonitor {
                             GestureLog.shared.logFromAnyThread("Detected \(fingers)-finger tap (\(String(format: "%.2fs", dur)))", level: .detect)
                             fireGesture(gesture)
                         }
+                    }
+                } else if peakFingers == 1, !physicalClickDuringSession,
+                          let pos = lastSingleFingerPos,
+                          let gesture = cornerTapGesture(atX: pos.x, atY: pos.y) {
+                    // Light tap in a corner — distinct from a physical press there
+                    NSLog("[TrackpadMonitor] Detected corner tap: %@ (x: %.2f, y: %.2f, force: %.2f)", gesture.rawValue, pos.x, pos.y, lastSingleFingerForce)
+                    DispatchQueue.main.async { [self] in
+                        GestureLog.shared.logFromAnyThread("Detected \(gesture.rawValue) (tap at \(String(format: "%.2f", pos.x)), \(String(format: "%.2f", pos.y)))", level: .detect)
+                        fireGesture(gesture)
                     }
                 }
             } else if elapsed < tapTimeout && !gestureConsumed {
@@ -939,41 +973,94 @@ class TrackpadMonitor {
 
     // MARK: - Position click detection
 
-    private func handlePositionClick() {
+    // Zone layout (normalized 0-1, origin bottom-left):
+    // Corners: small zones at the very tips of the trackpad
+    // Middle top/bottom: wider strip spanning more of the center edge
+    private static let cornerZoneSize: Float = 0.12
+    private static let middleZoneHeight: Float = 0.20
+
+    /// Classify a normalized position into its position-click gesture, if any
+    private func positionClickGesture(atX x: Float, atY y: Float) -> TrackpadGesture? {
+        let w = Self.cornerZoneSize
+        let middleH = Self.middleZoneHeight
+        if x < w && y > (1 - w) {
+            return .cornerClickTopLeft
+        } else if x > (1 - w) && y > (1 - w) {
+            return .cornerClickTopRight
+        } else if x < w && y < w {
+            return .cornerClickBottomLeft
+        } else if x > (1 - w) && y < w {
+            return .cornerClickBottomRight
+        } else if y > (1 - middleH) {
+            return .middleClickTop
+        } else if y < middleH {
+            return .middleClickBottom
+        }
+        return nil
+    }
+
+    /// Corner-tap gesture for a light tap position, or nil when not in a corner
+    private func cornerTapGesture(atX x: Float, atY y: Float) -> TrackpadGesture? {
+        let w = Self.cornerZoneSize
+        if x < w && y > (1 - w) { return .cornerTapTopLeft }
+        if x > (1 - w) && y > (1 - w) { return .cornerTapTopRight }
+        if x < w && y < w { return .cornerTapBottomLeft }
+        if x > (1 - w) && y < w { return .cornerTapBottomRight }
+        return nil
+    }
+
+    /// Corner tap vs click resolution when system "tap to click" is enabled: a
+    /// light tap synthesizes a mouse-down. "auto" separates them by MTTouch
+    /// force; "click"/"tap" force the legacy/manual behavior.
+    private var cornerTapPriority: String {
+        UserDefaults.standard.string(forKey: "GTTCornerTapPriority") ?? "auto"
+    }
+
+    /// MTTouch force above which a mouse-down counts as a physical click rather
+    /// than a synthetic tap-to-click. Probe data: light taps peak ≈ 1.0, a
+    /// registered click reaches ≈ 1.3+. Tune via "GTTClickForceThreshold".
+    private var clickForceThreshold: Float {
+        let stored = UserDefaults.standard.double(forKey: "GTTClickForceThreshold")
+        return stored > 0 ? Float(stored) : 1.15
+    }
+
+    /// Whether a 1-finger mouse-down right now should be treated as a physical
+    /// corner/position click (and claim the session, blocking corner tap)
+    private var cornerTapAllowsClick: Bool {
+        switch cornerTapPriority {
+        case "tap": return false
+        case "click": return true
+        default:
+            guard currentFingers == 1 else { return currentFingers >= 2 }
+            return lastSingleFingerForce >= clickForceThreshold
+        }
+    }
+
+    /// Record a physical button press while fingers are touching — marks the
+    /// touch session as a click so it won't be classified as a corner tap.
+    /// Called from mouse-down monitors; tests call it directly.
+    func notePhysicalPress() {
+        guard currentFingers >= 1, cornerTapAllowsClick else { return }
+        physicalClickDuringSession = true
+    }
+
+    private func handlePositionClick(_ event: NSEvent) {
         guard !positionClickFired, currentFingers == 1,
               let pos = lastSingleFingerPos else { return }
 
-        let x = pos.x
-        let y = pos.y
+        NSLog("[GTT-press] down (%.2f, %.2f) mode=%@ evPressure=%.2f force=%.3f vel=(%.2f, %.2f)",
+              pos.x, pos.y, cornerTapPriority, event.pressure,
+              lastSingleFingerForce, lastSingleFingerVel.x, lastSingleFingerVel.y)
 
-        // Zone layout (normalized 0-1, origin bottom-left):
-        // Corners: small zones at the very tips of the trackpad
-        // Middle top/bottom: wider strip spanning more of the center edge
-        let cornerW: Float = 0.12
-        let cornerH: Float = 0.12
-        let middleH: Float = 0.20   // middle strips extend further in than corners
-
-        let gesture: TrackpadGesture?
-        if x < cornerW && y > (1 - cornerH) {
-            gesture = .cornerClickTopLeft
-        } else if x > (1 - cornerW) && y > (1 - cornerH) {
-            gesture = .cornerClickTopRight
-        } else if x < cornerW && y < cornerH {
-            gesture = .cornerClickBottomLeft
-        } else if x > (1 - cornerW) && y < cornerH {
-            gesture = .cornerClickBottomRight
-        } else if y > (1 - middleH) {
-            gesture = .middleClickTop
-        } else if y < middleH {
-            gesture = .middleClickBottom
-        } else {
-            gesture = nil
+        guard cornerTapAllowsClick else {
+            NSLog("[TrackpadMonitor] Tap-to-click down ignored (force %.2f < %.2f)", lastSingleFingerForce, clickForceThreshold)
+            return
         }
 
-        if let gesture = gesture {
+        if let gesture = positionClickGesture(atX: pos.x, atY: pos.y) {
             positionClickFired = true
             DispatchQueue.main.async { [self] in
-                GestureLog.shared.logFromAnyThread("Position Click: \(gesture.rawValue) (x=\(String(format: "%.2f", x)), y=\(String(format: "%.2f", y)))", level: .detect)
+                GestureLog.shared.logFromAnyThread("Position Click: \(gesture.rawValue) (x=\(String(format: "%.2f", pos.x)), y=\(String(format: "%.2f", pos.y)))", level: .detect)
                 fireGesture(gesture)
             }
         }
@@ -1085,13 +1172,14 @@ class TrackpadMonitor {
             let dragHandler: (NSEvent) -> Void = { [weak self] e in self?.handleDrag(e) }
         // Left-click press: used for gesture logic (circle, position click)
         // Visual press state is handled in the multitouch callback via NSEvent.pressedMouseButtons
-        let leftPressHandler: (NSEvent) -> Void = { [weak self] _ in
+        let leftPressHandler: (NSEvent) -> Void = { [weak self] event in
             self?.trackpadIsPressed = true
+            self?.notePhysicalPress()
             if (self?.currentFingers ?? 0) >= 2 {
                 self?.pressDragDeltaX = 0
                 self?.pressDragActive = true
             }
-            self?.handlePositionClick()
+            self?.handlePositionClick(event)
         }
         let leftReleaseHandler: (NSEvent) -> Void = { [weak self] _ in
             self?.handlePressDragEnd()
@@ -1362,28 +1450,8 @@ class TrackpadMonitor {
 
         // Determine which gesture would fire based on finger count and position
         let gesture: TrackpadGesture?
-        if currentFingers == 1, let pos = lastSingleFingerPos {
-            let x = pos.x
-            let y = pos.y
-            let cornerW: Float = 0.12
-            let cornerH: Float = 0.12
-            let middleH: Float = 0.20
-
-            if x < cornerW && y > (1 - cornerH) {
-                gesture = .cornerClickTopLeft
-            } else if x > (1 - cornerW) && y > (1 - cornerH) {
-                gesture = .cornerClickTopRight
-            } else if x < cornerW && y < cornerH {
-                gesture = .cornerClickBottomLeft
-            } else if x > (1 - cornerW) && y < cornerH {
-                gesture = .cornerClickBottomRight
-            } else if y > (1 - middleH) {
-                gesture = .middleClickTop
-            } else if y < middleH {
-                gesture = .middleClickBottom
-            } else {
-                gesture = nil
-            }
+        if currentFingers == 1, let pos = lastSingleFingerPos, cornerTapAllowsClick {
+            gesture = positionClickGesture(atX: pos.x, atY: pos.y)
         } else if currentFingers == 2 {
             gesture = .twoFingerClick
         } else if currentFingers == 3 {

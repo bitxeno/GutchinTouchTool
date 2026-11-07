@@ -618,8 +618,8 @@ final class TrackpadPipelineTests: XCTestCase {
     // MARK: - Raw-frame movement tracking (tap rejection + raw swipe)
 
     /// Builds a raw MTTouch buffer matching the offsets TrackpadMonitor reads
-    /// (frame@0, fingerID@24, normX@32, normY@36, majorAxis@52).
-    private func makeTouchBuffer(touches: [(id: Int32, x: Float, y: Float)]) -> UnsafeMutableRawPointer {
+    /// (frame@0, fingerID@24, normX@32, normY@36, force@48, majorAxis@52).
+    private func makeTouchBuffer(touches: [(id: Int32, x: Float, y: Float)], force: Float = 0.95) -> UnsafeMutableRawPointer {
         let stride = MemoryLayout<MTTouch>.stride
         let buf = UnsafeMutableRawPointer.allocate(byteCount: stride * touches.count, alignment: MemoryLayout<Int>.alignment)
         buf.initializeMemory(as: UInt8.self, repeating: 0, count: stride * touches.count)
@@ -629,17 +629,18 @@ final class TrackpadPipelineTests: XCTestCase {
             buf.storeBytes(of: t.id, toByteOffset: base + 24, as: Int32.self)        // fingerID
             buf.storeBytes(of: t.x, toByteOffset: base + 32, as: Float.self)         // normalized x
             buf.storeBytes(of: t.y, toByteOffset: base + 36, as: Float.self)         // normalized y
+            buf.storeBytes(of: force, toByteOffset: base + 48, as: Float.self)       // normalized touch force
             buf.storeBytes(of: Float(6.0), toByteOffset: base + 52, as: Float.self)  // majorAxis
         }
         return buf
     }
 
-    private func sendFrame(_ monitor: TrackpadMonitor, _ touches: [(id: Int32, x: Float, y: Float)], at timestamp: Double) {
+    private func sendFrame(_ monitor: TrackpadMonitor, _ touches: [(id: Int32, x: Float, y: Float)], at timestamp: Double, force: Float = 0.95) {
         guard !touches.isEmpty else {
             monitor.handleMultitouchFrame(rawTouches: nil, numTouches: 0, timestamp: timestamp)
             return
         }
-        let buf = makeTouchBuffer(touches: touches)
+        let buf = makeTouchBuffer(touches: touches, force: force)
         monitor.handleMultitouchFrame(rawTouches: buf, numTouches: touches.count, timestamp: timestamp)
         buf.deallocate()
     }
@@ -759,6 +760,147 @@ final class TrackpadPipelineTests: XCTestCase {
         sendFrame(monitor, two, at: now)
         sendFrame(monitor, two.map { (id: $0.id, x: $0.x, y: $0.y - 0.10) }, at: now + 0.03)
         sendFrame(monitor, two.map { (id: $0.id, x: $0.x, y: $0.y - 0.20) }, at: now + 0.06)
+        sendFrame(monitor, [], at: now + 0.10)
+
+        waitForExpectations(timeout: 0.5)
+        monitor.unregisterAll()
+    }
+
+    // MARK: - Corner tap tests
+
+    /// Light 1-finger tap in the bottom-left corner fires Corner Tap
+    func testCornerTapBottomLeftFires() {
+        let expectation = expectation(description: "Corner tap fires")
+
+        var trigger = Trigger(name: "Corner Tap", input: .trackpadGesture(.cornerTapBottomLeft))
+        trigger.actions = [TriggerAction(actionType: .volumeUp)]
+
+        let monitor = TrackpadMonitor()
+        monitor.attachesRealInputs = false
+        monitor.registerTriggers([trigger])
+
+        ActionExecutor.onActionExecuted = { _ in expectation.fulfill() }
+
+        let now = Date().timeIntervalSince1970
+        sendFrame(monitor, [(id: 1, x: 0.04, y: 0.04)], at: now)
+        sendFrame(monitor, [], at: now + 0.10)
+
+        waitForExpectations(timeout: 2.0)
+        monitor.unregisterAll()
+    }
+
+    /// The framework reports a provisional fingerID (0) on touch-down then
+    /// switches to a real id — a tap must still be classified
+    func testCornerTapFiresWithFingerIDChange() {
+        let expectation = expectation(description: "Corner tap fires despite finger id change")
+
+        var trigger = Trigger(name: "Corner Tap", input: .trackpadGesture(.cornerTapBottomLeft))
+        trigger.actions = [TriggerAction(actionType: .volumeUp)]
+
+        let monitor = TrackpadMonitor()
+        monitor.attachesRealInputs = false
+        monitor.registerTriggers([trigger])
+
+        ActionExecutor.onActionExecuted = { _ in expectation.fulfill() }
+
+        let now = Date().timeIntervalSince1970
+        sendFrame(monitor, [(id: 0, x: 0.04, y: 0.04)], at: now)
+        sendFrame(monitor, [(id: 5, x: 0.04, y: 0.04)], at: now + 0.03)
+        sendFrame(monitor, [], at: now + 0.10)
+
+        waitForExpectations(timeout: 2.0)
+        monitor.unregisterAll()
+    }
+
+    /// Taps outside the corner zones never fire corner taps
+    func testCornerTapDoesNotFireOutsideCorner() {
+        let noFire = expectation(description: "No action should fire")
+        noFire.isInverted = true
+
+        var trigger = Trigger(name: "Corner Tap", input: .trackpadGesture(.cornerTapBottomLeft))
+        trigger.actions = [TriggerAction(actionType: .volumeUp)]
+
+        let monitor = TrackpadMonitor()
+        monitor.attachesRealInputs = false
+        monitor.registerTriggers([trigger])
+
+        ActionExecutor.onActionExecuted = { _ in noFire.fulfill() }
+
+        let now = Date().timeIntervalSince1970
+        sendFrame(monitor, [(id: 1, x: 0.50, y: 0.50)], at: now)
+        sendFrame(monitor, [], at: now + 0.10)
+
+        waitForExpectations(timeout: 0.5)
+        monitor.unregisterAll()
+    }
+
+    /// A physical button press during the touch session means it's a click,
+    /// not a corner tap (click and tap stay mutually exclusive in click mode)
+    func testPhysicalClickPreventsCornerTap() {
+        let noFire = expectation(description: "No corner tap should fire")
+        noFire.isInverted = true
+
+        var trigger = Trigger(name: "Corner Tap", input: .trackpadGesture(.cornerTapBottomLeft))
+        trigger.actions = [TriggerAction(actionType: .volumeUp)]
+
+        let monitor = TrackpadMonitor()
+        monitor.attachesRealInputs = false
+        monitor.registerTriggers([trigger])
+
+        ActionExecutor.onActionExecuted = { _ in noFire.fulfill() }
+
+        UserDefaults.standard.set("click", forKey: "GTTCornerTapPriority")
+        let now = Date().timeIntervalSince1970
+        sendFrame(monitor, [(id: 1, x: 0.04, y: 0.04)], at: now, force: 1.35)  // click-level force
+        monitor.notePhysicalPress()   // user pressed the trackpad while touching
+        sendFrame(monitor, [], at: now + 0.10)
+
+        waitForExpectations(timeout: 0.5)
+        UserDefaults.standard.removeObject(forKey: "GTTCornerTapPriority")
+        monitor.unregisterAll()
+    }
+
+    /// In auto mode a synthetic tap-to-click mousedown (tap-level force) does
+    /// not claim the session — the corner tap fires on lift
+    func testAutoModeLightTapDownDoesNotPreventCornerTap() {
+        let expectation = expectation(description: "Corner tap fires in auto mode with tap-level force")
+
+        var trigger = Trigger(name: "Corner Tap", input: .trackpadGesture(.cornerTapBottomLeft))
+        trigger.actions = [TriggerAction(actionType: .volumeUp)]
+
+        let monitor = TrackpadMonitor()
+        monitor.attachesRealInputs = false
+        monitor.registerTriggers([trigger])
+
+        ActionExecutor.onActionExecuted = { _ in expectation.fulfill() }
+
+        let now = Date().timeIntervalSince1970
+        sendFrame(monitor, [(id: 1, x: 0.04, y: 0.04)], at: now)  // tap-level force (0.95)
+        monitor.notePhysicalPress()                                // synthetic tap-to-click down
+        sendFrame(monitor, [], at: now + 0.10)
+
+        waitForExpectations(timeout: 2.0)
+        monitor.unregisterAll()
+    }
+
+    /// In auto mode a physical press (click-level force) claims the session
+    /// and blocks the corner tap — same as click mode
+    func testAutoModePhysicalPressPreventsCornerTap() {
+        let noFire = expectation(description: "No corner tap should fire")
+        noFire.isInverted = true
+
+        var trigger = Trigger(name: "Corner Tap", input: .trackpadGesture(.cornerTapBottomLeft))
+        trigger.actions = [TriggerAction(actionType: .volumeUp)]
+
+        let monitor = TrackpadMonitor()
+        monitor.attachesRealInputs = false
+        monitor.registerTriggers([trigger])
+
+        ActionExecutor.onActionExecuted = { _ in noFire.fulfill() }
+
+        let now = Date().timeIntervalSince1970
+        sendFrame(monitor, [(id: 1, x: 0.04, y: 0.04)], at: now, force: 1.35)
+        monitor.notePhysicalPress()
         sendFrame(monitor, [], at: now + 0.10)
 
         waitForExpectations(timeout: 0.5)

@@ -161,6 +161,16 @@ struct GesturePreviewView: View {
         case .middleClickBottom:
             PositionClickAnimation(position: .middleBottom, animating: animating)
 
+        // Corner/Position taps (light tap, no button press)
+        case .cornerTapTopLeft:
+            PositionClickAnimation(position: .topLeft, animating: animating)
+        case .cornerTapTopRight:
+            PositionClickAnimation(position: .topRight, animating: animating)
+        case .cornerTapBottomLeft:
+            PositionClickAnimation(position: .bottomLeft, animating: animating)
+        case .cornerTapBottomRight:
+            PositionClickAnimation(position: .bottomRight, animating: animating)
+
         // Press-drag
         case .twoFingerPressDragLeft:
             SwipeAnimation(fingerCount: 2, direction: .left, animating: animating)

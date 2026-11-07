@@ -78,6 +78,12 @@ enum TrackpadGesture: String, CaseIterable, Identifiable, Codable {
     case middleClickTop = "Middle Click Top"
     case middleClickBottom = "Middle Click Bottom"
 
+    // Position taps (light 1-finger tap at corner zones, no button press)
+    case cornerTapTopLeft = "Corner Tap Top Left"
+    case cornerTapTopRight = "Corner Tap Top Right"
+    case cornerTapBottomLeft = "Corner Tap Bottom Left"
+    case cornerTapBottomRight = "Corner Tap Bottom Right"
+
     var id: String { rawValue }
 }
 

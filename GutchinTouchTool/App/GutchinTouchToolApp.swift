@@ -55,9 +55,26 @@ struct GeneralSettingsView: View {
     @EnvironmentObject var appState: AppState
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @AppStorage("showMenuBarIcon") private var showMenuBarIcon = true
+    @AppStorage("GTTCornerTapPriority") private var cornerTapPriority = "auto"
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
+            Text("Gestures")
+                .font(.headline)
+            VStack(alignment: .leading, spacing: 10) {
+                Picker("Corner tap priority", selection: $cornerTapPriority) {
+                    Text("Auto (recommended)").tag("auto")
+                    Text("Click wins").tag("click")
+                    Text("Tap wins").tag("tap")
+                }
+                Text("With system “tap to click” enabled, a light tap also produces a mouse-down. Auto separates them by finger force (a click presses well beyond tap level). The manual modes force one gesture to win in 1-finger corner/edge zones.")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+            .padding(.leading, 4)
+
+            Divider()
+
             Text("Startup")
                 .font(.headline)
             VStack(alignment: .leading, spacing: 10) {
@@ -177,7 +194,8 @@ struct GeneralSettingsView: View {
         if alert.runModal() == .alertFirstButtonReturn {
             let keys = ["GTTGlobalEnabled", "GTTAccentColor", "GTTAppearance",
                         "GTTPressDragThreshold", "GTTTipTapMinRestTime",
-                        "GTTSuppressMouseDuringDrawing", "launchAtLogin", "showMenuBarIcon", "GTTHasSeenTutorial"]
+                        "GTTSuppressMouseDuringDrawing", "launchAtLogin", "showMenuBarIcon", "GTTHasSeenTutorial",
+                        "GTTCornerTapPriority", "GTTClickForceThreshold"]
             for key in keys {
                 UserDefaults.standard.removeObject(forKey: key)
             }
