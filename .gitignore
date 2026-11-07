@@ -13,3 +13,5 @@ xcuserdata/
 # Temporary files
 /tmp/
 *.log
+build.sh
+*.profraw
