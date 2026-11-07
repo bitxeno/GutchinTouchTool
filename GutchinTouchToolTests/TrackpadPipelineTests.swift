@@ -27,6 +27,7 @@ final class TrackpadPipelineTests: XCTestCase {
         trigger.actions = [action]
 
         let monitor = TrackpadMonitor()
+        monitor.attachesRealInputs = false
         monitor.registerTriggers([trigger])
 
         var firedAction: TriggerAction?
@@ -61,6 +62,7 @@ final class TrackpadPipelineTests: XCTestCase {
         trigger.actions = [TriggerAction(actionType: .sendKeyStroke)]
 
         let monitor = TrackpadMonitor()
+        monitor.attachesRealInputs = false
         monitor.registerTriggers([trigger])
 
         ActionExecutor.onActionExecuted = { _ in
@@ -86,6 +88,7 @@ final class TrackpadPipelineTests: XCTestCase {
         trigger.actions = [TriggerAction(actionType: .sendKeyStroke)]
 
         let monitor = TrackpadMonitor()
+        monitor.attachesRealInputs = false
         monitor.registerTriggers([trigger])
 
         ActionExecutor.onActionExecuted = { _ in
@@ -111,6 +114,7 @@ final class TrackpadPipelineTests: XCTestCase {
         trigger.actions = [TriggerAction(actionType: .volumeUp)]
 
         let monitor = TrackpadMonitor()
+        monitor.attachesRealInputs = false
         monitor.registerTriggers([trigger])
 
         var firedAction: TriggerAction?
@@ -137,6 +141,7 @@ final class TrackpadPipelineTests: XCTestCase {
         trigger.actions = [TriggerAction(actionType: .lockScreen)]
 
         let monitor = TrackpadMonitor()
+        monitor.attachesRealInputs = false
         monitor.registerTriggers([trigger])
 
         var firedAction: TriggerAction?
@@ -165,6 +170,7 @@ final class TrackpadPipelineTests: XCTestCase {
         trigger.actions = [TriggerAction(actionType: .sendKeyStroke)]
 
         let monitor = TrackpadMonitor()
+        monitor.attachesRealInputs = false
         monitor.registerTriggers([trigger])
 
         ActionExecutor.onActionExecuted = { _ in expectation.fulfill() }
@@ -189,6 +195,7 @@ final class TrackpadPipelineTests: XCTestCase {
         trigger.actions = [TriggerAction(actionType: .playPause)]
 
         let monitor = TrackpadMonitor()
+        monitor.attachesRealInputs = false
         monitor.registerTriggers([trigger])
 
         var firedAction: TriggerAction?
@@ -228,6 +235,7 @@ final class TrackpadPipelineTests: XCTestCase {
         trigger4.actions = [TriggerAction(actionType: .volumeDown)]
 
         let monitor = TrackpadMonitor()
+        monitor.attachesRealInputs = false
         monitor.registerTriggers([trigger3, trigger4])
 
         ActionExecutor.onActionExecuted = { a in
@@ -256,6 +264,7 @@ final class TrackpadPipelineTests: XCTestCase {
         trigger.isEnabled = false
 
         let monitor = TrackpadMonitor()
+        monitor.attachesRealInputs = false
         monitor.registerTriggers([trigger])
 
         ActionExecutor.onActionExecuted = { _ in expectation.fulfill() }
@@ -280,6 +289,7 @@ final class TrackpadPipelineTests: XCTestCase {
         trigger.actions = [TriggerAction(actionType: .sendKeyStroke)]
 
         let monitor = TrackpadMonitor()
+        monitor.attachesRealInputs = false
         monitor.registerTriggers([trigger])
         monitor.unregisterAll()
 
@@ -310,6 +320,7 @@ final class TrackpadPipelineTests: XCTestCase {
         appTrigger.actions = [TriggerAction(actionType: .volumeDown)]
 
         let monitor = TrackpadMonitor()
+        monitor.attachesRealInputs = false
         monitor.registerTriggers([globalTrigger, appTrigger])
 
         ActionExecutor.onActionExecuted = { a in
@@ -340,6 +351,7 @@ final class TrackpadPipelineTests: XCTestCase {
         ]
 
         let monitor = TrackpadMonitor()
+        monitor.attachesRealInputs = false
         monitor.registerTriggers([trigger])
 
         ActionExecutor.onActionExecuted = { a in
@@ -366,6 +378,7 @@ final class TrackpadPipelineTests: XCTestCase {
         trigger.actions = [TriggerAction(actionType: .snapWindowLeft)]
 
         let monitor = TrackpadMonitor()
+        monitor.attachesRealInputs = false
         monitor.registerTriggers([trigger])
 
         var firedAction: TriggerAction?
@@ -388,6 +401,7 @@ final class TrackpadPipelineTests: XCTestCase {
         trigger.actions = [TriggerAction(actionType: .snapWindowRight)]
 
         let monitor = TrackpadMonitor()
+        monitor.attachesRealInputs = false
         monitor.registerTriggers([trigger])
 
         var firedAction: TriggerAction?
@@ -411,6 +425,7 @@ final class TrackpadPipelineTests: XCTestCase {
         trigger.actions = [TriggerAction(actionType: .sendKeyStroke)]
 
         let monitor = TrackpadMonitor()
+        monitor.attachesRealInputs = false
         monitor.registerTriggers([trigger])
 
         ActionExecutor.onActionExecuted = { _ in expectation.fulfill() }
@@ -443,6 +458,7 @@ final class TrackpadPipelineTests: XCTestCase {
         trigger.actions = [TriggerAction(actionType: .brightnessUp)]
 
         let monitor = TrackpadMonitor()
+        monitor.attachesRealInputs = false
         monitor.registerTriggers([trigger])
 
         var firedAction: TriggerAction?
@@ -465,6 +481,7 @@ final class TrackpadPipelineTests: XCTestCase {
         trigger.actions = [TriggerAction(actionType: .brightnessDown)]
 
         let monitor = TrackpadMonitor()
+        monitor.attachesRealInputs = false
         monitor.registerTriggers([trigger])
 
         var firedAction: TriggerAction?
@@ -488,6 +505,7 @@ final class TrackpadPipelineTests: XCTestCase {
         trigger.actions = [TriggerAction(actionType: .sendKeyStroke)]
 
         let monitor = TrackpadMonitor()
+        monitor.attachesRealInputs = false
         monitor.registerTriggers([trigger])
 
         ActionExecutor.onActionExecuted = { _ in expectation.fulfill() }
@@ -521,6 +539,7 @@ final class TrackpadPipelineTests: XCTestCase {
         trigger.actions = [TriggerAction(actionType: .lockScreen)]
 
         let monitor = TrackpadMonitor()
+        monitor.attachesRealInputs = false
         monitor.registerTriggers([trigger])
 
         var firedAction: TriggerAction?
@@ -557,6 +576,7 @@ final class TrackpadPipelineTests: XCTestCase {
         trigger.actions = [TriggerAction(actionType: .volumeUp)]
 
         let monitor = TrackpadMonitor()
+        monitor.attachesRealInputs = false
         monitor.registerTriggers([trigger])
 
         // Disable global toggle
@@ -580,6 +600,7 @@ final class TrackpadPipelineTests: XCTestCase {
         trigger.actions = [TriggerAction(actionType: .volumeUp)]
 
         let monitor = TrackpadMonitor()
+        monitor.attachesRealInputs = false
         monitor.registerTriggers([trigger])
 
         UserDefaults.standard.set(true, forKey: "GTTGlobalEnabled")
@@ -591,6 +612,156 @@ final class TrackpadPipelineTests: XCTestCase {
         waitForExpectations(timeout: 2.0)
 
         UserDefaults.standard.removeObject(forKey: "GTTGlobalEnabled")
+        monitor.unregisterAll()
+    }
+
+    // MARK: - Raw-frame movement tracking (tap rejection + raw swipe)
+
+    /// Builds a raw MTTouch buffer matching the offsets TrackpadMonitor reads
+    /// (frame@0, fingerID@24, normX@32, normY@36, majorAxis@52).
+    private func makeTouchBuffer(touches: [(id: Int32, x: Float, y: Float)]) -> UnsafeMutableRawPointer {
+        let stride = MemoryLayout<MTTouch>.stride
+        let buf = UnsafeMutableRawPointer.allocate(byteCount: stride * touches.count, alignment: MemoryLayout<Int>.alignment)
+        buf.initializeMemory(as: UInt8.self, repeating: 0, count: stride * touches.count)
+        for (i, t) in touches.enumerated() {
+            let base = i * stride
+            buf.storeBytes(of: Int32(7), toByteOffset: base, as: Int32.self)         // frame (same for all touches)
+            buf.storeBytes(of: t.id, toByteOffset: base + 24, as: Int32.self)        // fingerID
+            buf.storeBytes(of: t.x, toByteOffset: base + 32, as: Float.self)         // normalized x
+            buf.storeBytes(of: t.y, toByteOffset: base + 36, as: Float.self)         // normalized y
+            buf.storeBytes(of: Float(6.0), toByteOffset: base + 52, as: Float.self)  // majorAxis
+        }
+        return buf
+    }
+
+    private func sendFrame(_ monitor: TrackpadMonitor, _ touches: [(id: Int32, x: Float, y: Float)], at timestamp: Double) {
+        guard !touches.isEmpty else {
+            monitor.handleMultitouchFrame(rawTouches: nil, numTouches: 0, timestamp: timestamp)
+            return
+        }
+        let buf = makeTouchBuffer(touches: touches)
+        monitor.handleMultitouchFrame(rawTouches: buf, numTouches: touches.count, timestamp: timestamp)
+        buf.deallocate()
+    }
+
+    private func fourFingers(xOffset: Float, yOffset: Float) -> [(id: Int32, x: Float, y: Float)] {
+        [
+            (id: 1, x: 0.25 + xOffset, y: 0.50 + yOffset),
+            (id: 2, x: 0.40 + xOffset, y: 0.50 + yOffset),
+            (id: 3, x: 0.55 + xOffset, y: 0.50 + yOffset),
+            (id: 4, x: 0.70 + xOffset, y: 0.50 + yOffset),
+        ]
+    }
+
+    /// Fingers moved more than tapMovementThreshold — must NOT count as a tap
+    /// (this is the "4-finger swipe down misread as 4-finger tap" bug).
+    func testMovingFingersDoNotTriggerTap() {
+        let noFire = expectation(description: "No action should fire")
+        noFire.isInverted = true
+
+        var trigger = Trigger(name: "Tap", input: .trackpadGesture(.fourFingerTap))
+        trigger.actions = [TriggerAction(actionType: .volumeUp)]
+
+        let monitor = TrackpadMonitor()
+        monitor.attachesRealInputs = false
+        monitor.registerTriggers([trigger])
+
+        ActionExecutor.onActionExecuted = { _ in noFire.fulfill() }
+
+        let now = Date().timeIntervalSince1970
+        sendFrame(monitor, fourFingers(xOffset: 0, yOffset: 0), at: now)
+        // Swipe 20% of the pad — well above the 5% tap threshold
+        sendFrame(monitor, fourFingers(xOffset: 0.10, yOffset: -0.10), at: now + 0.03)
+        sendFrame(monitor, fourFingers(xOffset: 0.20, yOffset: -0.20), at: now + 0.06)
+        sendFrame(monitor, [], at: now + 0.10)
+
+        waitForExpectations(timeout: 0.5)
+        monitor.unregisterAll()
+    }
+
+    /// Small jitter within tapMovementThreshold must still count as a tap
+    /// (guards against over-rejection of real taps).
+    func testSmallMovementStillTriggersTap() {
+        let expectation = expectation(description: "Tap fires despite tiny movement")
+
+        var trigger = Trigger(name: "Tap", input: .trackpadGesture(.fourFingerTap))
+        trigger.actions = [TriggerAction(actionType: .volumeUp)]
+
+        let monitor = TrackpadMonitor()
+        monitor.attachesRealInputs = false
+        monitor.registerTriggers([trigger])
+
+        ActionExecutor.onActionExecuted = { _ in expectation.fulfill() }
+
+        let now = Date().timeIntervalSince1970
+        sendFrame(monitor, fourFingers(xOffset: 0, yOffset: 0), at: now)
+        // 1% drift — below the 5% tap threshold
+        sendFrame(monitor, fourFingers(xOffset: 0.005, yOffset: 0.005), at: now + 0.04)
+        sendFrame(monitor, [], at: now + 0.10)
+
+        waitForExpectations(timeout: 2.0)
+        monitor.unregisterAll()
+    }
+
+    /// A 4-finger swipe whose scroll events are consumed by the system must be
+    /// classified from raw frames as a swipe — not as a tap.
+    func testRawFourFingerSwipeDownDetected() {
+        let swipeExpectation = expectation(description: "4-finger swipe down fires")
+        let tapExpectation = expectation(description: "4-finger tap must NOT fire")
+        tapExpectation.isInverted = true
+
+        var swipeTrigger = Trigger(name: "Swipe", input: .trackpadGesture(.fourFingerSwipeDown))
+        swipeTrigger.actions = [TriggerAction(actionType: .volumeDown)]
+        var tapTrigger = Trigger(name: "Tap", input: .trackpadGesture(.fourFingerTap))
+        tapTrigger.actions = [TriggerAction(actionType: .volumeUp)]
+
+        let monitor = TrackpadMonitor()
+        monitor.attachesRealInputs = false
+        monitor.registerTriggers([swipeTrigger, tapTrigger])
+
+        ActionExecutor.onActionExecuted = { action in
+            if action.actionType == .volumeDown { swipeExpectation.fulfill() }
+            if action.actionType == .volumeUp { tapExpectation.fulfill() }
+        }
+
+        let now = Date().timeIntervalSince1970
+        // Fingers land high, move down 30% of the pad, lift
+        sendFrame(monitor, fourFingers(xOffset: 0, yOffset: 0.15), at: now)
+        sendFrame(monitor, fourFingers(xOffset: 0, yOffset: 0.05), at: now + 0.03)
+        sendFrame(monitor, fourFingers(xOffset: 0, yOffset: -0.05), at: now + 0.06)
+        sendFrame(monitor, fourFingers(xOffset: 0, yOffset: -0.15), at: now + 0.09)
+        sendFrame(monitor, [], at: now + 0.15)
+
+        waitForExpectations(timeout: 2.0)
+        monitor.unregisterAll()
+    }
+
+    /// 2-finger movement belongs to the scroll-based swipe path — raw-frame
+    /// detection must not fire for it (would double-fire when scroll works).
+    func testTwoFingerMovementDoesNotFireRawSwipe() {
+        let noFire = expectation(description: "No action should fire")
+        noFire.isInverted = true
+
+        var trigger = Trigger(name: "Swipe", input: .trackpadGesture(.twoFingerSwipeDown))
+        trigger.actions = [TriggerAction(actionType: .volumeDown)]
+
+        let monitor = TrackpadMonitor()
+        monitor.attachesRealInputs = false
+        monitor.registerTriggers([trigger])
+
+        ActionExecutor.onActionExecuted = { _ in noFire.fulfill() }
+
+        let now = Date().timeIntervalSince1970
+        let two: [(id: Int32, x: Float, y: Float)] = [
+            (id: 1, x: 0.40, y: 0.70),
+            (id: 2, x: 0.55, y: 0.70),
+        ]
+        sendFrame(monitor, two, at: now)
+        sendFrame(monitor, two.map { (id: $0.id, x: $0.x, y: $0.y - 0.10) }, at: now + 0.03)
+        sendFrame(monitor, two.map { (id: $0.id, x: $0.x, y: $0.y - 0.20) }, at: now + 0.06)
+        sendFrame(monitor, [], at: now + 0.10)
+
+        waitForExpectations(timeout: 0.5)
         monitor.unregisterAll()
     }
 }

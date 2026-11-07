@@ -121,9 +121,20 @@ class TrackpadMonitor {
     private var currentFingers: Int = 0
     private var gestureConsumed = false
     private let tapTimeout: TimeInterval = 0.35
-    private var totalMovement: Float = 0
-    private var previousPositions: [Int32: (Float, Float)] = [:] // fingerID -> (x, y)
-    private let tapMovementThreshold: Float = 0.05 // normalized units
+    private let tapMovementThreshold: Float = 0.05 // normalized units, max per-finger travel for a tap
+
+    // Per-finger position tracking, recorded from raw touch frames.
+    // Used to reject taps with finger movement and to detect 3/4-finger swipes
+    // that macOS consumes as system gestures (Mission Control, App Exposé) —
+    // those never produce scrollWheel events, so handleScroll never sees them.
+    private var fingerStartPositions: [Int: (x: Float, y: Float)] = [:] // fingerID -> first valid position
+    private var fingerLastPositions: [Int: (x: Float, y: Float)] = [:]  // fingerID -> latest valid position
+    private let rawSwipeDistanceThreshold: Float = 0.15 // normalized mean finger travel for a raw swipe
+
+    // Real device frames arrive on the multitouch callback thread while tests
+    // also drive handleMultitouchFrame from the main thread — serialize the
+    // dictionaries to avoid Swift exclusivity violations.
+    private let fingerTrackingLock = NSLock()
 
     // Double-tap detection state
     private var lastTwoFingerTapTime: Date?
@@ -186,6 +197,11 @@ class TrackpadMonitor {
     // Raw touch struct stride (auto-detected at runtime)
     private var touchStride: Int = 0
 
+    /// When false, registerTriggers skips attaching real hardware hooks
+    /// (multitouch callbacks, NSEvent monitors, CGEventTap). Unit tests set
+    /// this so real trackpad/mouse input can't pollute simulated frames.
+    var attachesRealInputs = true
+
     func registerTriggers(_ triggers: [Trigger]) {
         unregisterAll()
 
@@ -201,6 +217,9 @@ class TrackpadMonitor {
         }
 
         guard !registeredTriggers.isEmpty else { return }
+
+        // Tests drive handleMultitouchFrame directly; skip real hardware hooks
+        guard attachesRealInputs else { return }
 
         setupNSEventMonitors()
         setupMultitouchMonitoring()
@@ -290,6 +309,11 @@ class TrackpadMonitor {
         var fingerXPositions: [Float] = []
         var liveTouchPoints: [TouchPoint] = []
         if let raw = rawTouches, activeFingersCount > 0 {
+            // New touch session — clear stale per-finger data before recording
+            // this frame (currentFingers still holds the previous frame's count here)
+            if currentFingers == 0 {
+                resetFingerTracking()
+            }
             // Only detect stride when we have 2+ fingers (need two structs to measure)
             if touchStride == 0 && activeFingersCount >= 2 {
                 touchStride = detectTouchStride(raw: raw, numTouches: activeFingersCount)
@@ -301,6 +325,7 @@ class TrackpadMonitor {
                 fingerXPositions.append(t.x)
                 // Only include in live view if position is valid (not a ghost at 0,0)
                 if t.x > 0.001 || t.y > 0.001 {
+                    trackFingerPosition(id: Int(t.fingerID), x: t.x, y: t.y)
                     liveTouchPoints.append(TouchPoint(
                         id: Int(t.fingerID),
                         x: t.x,
@@ -474,7 +499,33 @@ class TrackpadMonitor {
         if activeFingersCount == 0 && previousFingers > 0 && touchBegan != nil {
             let elapsed = Date().timeIntervalSince(touchBegan!)
 
-            if elapsed < tapTimeout && !gestureConsumed {
+            // --- Raw-frame swipe detection (3+ fingers) ---
+            // macOS consumes scrollWheel for system-bound 3/4-finger swipes
+            // (Mission Control, App Exposé, Spaces) so they never reach
+            // handleScroll — classify them from raw touch frames instead.
+            // Skipped when the scroll path already consumed the session, to
+            // avoid double-firing when 3+ finger movement does produce
+            // scroll events (e.g. system gestures disabled in Settings).
+            if peakFingers >= 3, !gestureConsumed,
+               let (dx, dy) = meanFingerDisplacement(),
+               sqrt(dx * dx + dy * dy) >= rawSwipeDistanceThreshold {
+                let direction: SwipeDirection = abs(dx) > abs(dy)
+                    ? (dx > 0 ? .right : .left)
+                    : (dy > 0 ? .up : .down)
+                if let gesture = swipeGesture(fingers: peakFingers, direction: direction) {
+                    gestureConsumed = true
+                    NSLog("[TrackpadMonitor] Raw-frame swipe: %@ (dx: %.2f, dy: %.2f)", gesture.rawValue, dx, dy)
+                    DispatchQueue.main.async { [self] in
+                        GestureLog.shared.logFromAnyThread("Detected \(gesture.rawValue) (raw frames, dx \(String(format: "%.2f", dx)), dy \(String(format: "%.2f", dy)))", level: .detect)
+                        fireGesture(gesture)
+                    }
+                }
+            }
+
+            // Taps require still fingers — otherwise a fast 3/4-finger swipe
+            // consumed by the system would be misread as a tap
+            let fingerTravel = maxFingerTravel()
+            if elapsed < tapTimeout && !gestureConsumed && fingerTravel < tapMovementThreshold {
                 if peakFingers == 2 {
                     // Check for double-tap
                     let now = Date()
@@ -521,6 +572,10 @@ class TrackpadMonitor {
                         }
                     }
                 }
+            } else if elapsed < tapTimeout && !gestureConsumed {
+                // Fingers moved too much for a tap — likely a swipe the scroll
+                // path never saw (system-consumed) or too slow to classify
+                NSLog("[TrackpadMonitor] Tap rejected: fingers moved %.3f (max %.3f)", fingerTravel, tapMovementThreshold)
             }
 
             touchBegan = nil
@@ -967,6 +1022,58 @@ class TrackpadMonitor {
             GestureLog.shared.logFromAnyThread("TipTap: \(gesture.rawValue) (restX=\(String(format: "%.2f", restX)))", level: .detect)
             fireGesture(gesture)
         }
+    }
+
+    // MARK: - Per-finger movement tracking
+
+    private func resetFingerTracking() {
+        fingerTrackingLock.lock()
+        fingerStartPositions = [:]
+        fingerLastPositions = [:]
+        fingerTrackingLock.unlock()
+    }
+
+    private func trackFingerPosition(id: Int, x: Float, y: Float) {
+        fingerTrackingLock.lock()
+        if fingerStartPositions[id] == nil {
+            fingerStartPositions[id] = (x, y)
+        }
+        fingerLastPositions[id] = (x, y)
+        fingerTrackingLock.unlock()
+    }
+
+    /// Largest net displacement of any single finger this session (normalized units)
+    private func maxFingerTravel() -> Float {
+        fingerTrackingLock.lock()
+        defer { fingerTrackingLock.unlock() }
+        var maxTravel: Float = 0
+        for (id, start) in fingerStartPositions {
+            guard let last = fingerLastPositions[id] else { continue }
+            let dx = last.x - start.x
+            let dy = last.y - start.y
+            let travel = sqrt(dx * dx + dy * dy)
+            if travel > maxTravel { maxTravel = travel }
+        }
+        return maxTravel
+    }
+
+    /// Mean net displacement vector across all fingers this session (normalized
+    /// units). Normalized coords: x 0=left/1=right, y 0=bottom/1=top.
+    private func meanFingerDisplacement() -> (dx: Float, dy: Float)? {
+        fingerTrackingLock.lock()
+        defer { fingerTrackingLock.unlock() }
+        guard !fingerStartPositions.isEmpty else { return nil }
+        var sumX: Float = 0
+        var sumY: Float = 0
+        var count: Float = 0
+        for (id, start) in fingerStartPositions {
+            guard let last = fingerLastPositions[id] else { continue }
+            sumX += last.x - start.x
+            sumY += last.y - start.y
+            count += 1
+        }
+        guard count > 0 else { return nil }
+        return (sumX / count, sumY / count)
     }
 
     // MARK: - NSEvent monitors for scroll/pinch/rotate

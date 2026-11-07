@@ -66,6 +66,9 @@ class AppState: ObservableObject {
     }
 
     func startMonitoring() {
+        // The unit-test host runs the real app — never attach hardware hooks there,
+        // or real gestures will fire actions into test expectations
+        guard NSClassFromString("XCTestCase") == nil else { return }
         NSLog("[GTT] startMonitoring called")
         refreshMonitors()
     }
